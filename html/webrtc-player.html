@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC Stream Player - MediaMTX</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .input-group {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-stop {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-stop:hover {
+            background: #d32f2f;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(244, 67, 54, 0.4);
+        }
+
+        .btn-fullscreen {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-fullscreen:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-bar {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.disconnected {
+            background: #f44336;
+        }
+
+        .status-dot.connecting {
+            background: #ff9800;
+        }
+
+        .status-dot.connected {
+            background: #4CAF50;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        #video {
+            width: 100%;
+            display: block;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            pointer-events: none;
+        }
+
+        .video-overlay .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .logs {
+            margin-top: 20px;
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            opacity: 0.8;
+        }
+
+        .log-entry.error {
+            color: #ff6b6b;
+        }
+
+        .log-entry.success {
+            color: #51cf66;
+        }
+
+        .log-entry.info {
+            color: #74c0fc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎥 WebRTC Stream Player</h1>
+            <p>Shelter Inteliguard System - Real-time Camera Monitoring</p>
+        </div>
+
+        <div class="content">
+            <div class="controls">
+                <div class="input-group">
+                    <label>MediaMTX Host</label>
+                    <input type="text" id="host" value="100.99.3.59:8889" placeholder="100.99.3.59:8889">
+                </div>
+                <div class="input-group">
+                    <label>Stream Name</label>
+                    <input type="text" id="stream" value="mycamera" placeholder="mycamera">
+                </div>
+                <button class="btn-start" onclick="startStream()" id="btnStart">
+                    ▶ Start Stream
+                </button>
+                <button class="btn-stop" onclick="stopStream()" id="btnStop" disabled>
+                    ⏹ Stop Stream
+                </button>
+                <button class="btn-fullscreen" onclick="toggleFullscreen()" id="btnFullscreen">
+                    ⛶ Fullscreen
+                </button>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-item">
+                    <div class="status-dot disconnected" id="statusDot"></div>
+                    <strong>Status:</strong> <span id="statusText">Disconnected</span>
+                </div>
+                <div class="status-item">
+                    <strong>Latency:</strong> <span id="latency">-- ms</span>
+                </div>
+                <div class="status-item">
+                    <strong>ICE State:</strong> <span id="iceState">--</span>
+                </div>
+            </div>
+
+            <div class="video-container" id="videoContainer">
+                <video id="video" autoplay playsinline muted></video>
+                <div class="video-overlay" id="videoOverlay">
+                    <div class="icon">📹</div>
+                    <div>Click "Start Stream" to begin</div>
+                </div>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="label">Video Codec</div>
+                    <div class="value" id="videoCodec">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Resolution</div>
+                    <div class="value" id="resolution">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">FPS</div>
+                    <div class="value" id="fps">--</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Bitrate</div>
+                    <div class="value" id="bitrate">--</div>
+                </div>
+            </div>
+
+            <div class="logs" id="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        let pc = null;
+        let statsInterval = null;
+
+        function log(message, type = 'info') {
+            const logs = document.getElementById('logs');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logs.appendChild(entry);
+            logs.scrollTop = logs.scrollHeight;
+            console.log(message);
+        }
+
+        function updateStatus(status, color) {
+            document.getElementById('statusText').textContent = status;
+            const dot = document.getElementById('statusDot');
+            dot.className = `status-dot ${color}`;
+        }
+
+        function showVideoOverlay(show) {
+            document.getElementById('videoOverlay').style.display = show ? 'block' : 'none';
+        }
+
+        // Ganti fungsi ini di webrtc-player.html
+        function getMediaMTXHost() {
+            const hostname = window.location.hostname;
+            const protocol = window.location.protocol === 'https:' ? 'https://' : 'http://';
+            const port = window.location.port ? ':' + window.location.port : '';
+            
+            // Return full URL tanpa protocol (untuk WebRTC)
+            // Karena sekarang nginx proxy ke mediamtx
+            return hostname + port;
+        }
+
+        async function startStream() {
+            const host = document.getElementById('host').value;
+            const streamName = document.getElementById('stream').value;
+
+            if (!host || !streamName) {
+                log('Please enter host and stream name', 'error');
+                return;
+            }
+
+            log('Starting WebRTC stream...', 'info');
+            updateStatus('Connecting...', 'connecting');
+
+            document.getElementById('btnStart').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+
+            try {
+                pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ],
+                    bundlePolicy: 'max-bundle'
+                });
+
+                pc.ontrack = (evt) => {
+                    log(`Received ${evt.track.kind} track`, 'success');
+                    const video = document.getElementById('video');
+                    video.srcObject = evt.streams[0];
+                    showVideoOverlay(false);
+                    updateStatus('Connected', 'connected');
+                    startStatsMonitoring();
+                };
+
+                pc.oniceconnectionstatechange = () => {
+                    const state = pc.iceConnectionState;
+                    log(`ICE connection state: ${state}`, 'info');
+                    document.getElementById('iceState').textContent = state;
+
+                    if (state === 'connected') {
+                        log('WebRTC connection established!', 'success');
+                        updateStatus('Connected', 'connected');
+                    } else if (state === 'failed' || state === 'disconnected') {
+                        log('Connection failed or disconnected', 'error');
+                        updateStatus('Disconnected', 'disconnected');
+                        stopStream();
+                    }
+                };
+
+                pc.onicecandidate = (evt) => {
+                    if (evt.candidate) {
+                        log(`ICE candidate: ${evt.candidate.type}`, 'info');
+                    }
+                };
+
+                pc.addTransceiver('video', { direction: 'recvonly' });
+                pc.addTransceiver('audio', { direction: 'recvonly' });
+
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+
+                log('Sending offer to MediaMTX...', 'info');
+
+                // PENTING: Sekarang pakai protocol yang sama dengan page (http/https)
+                const protocol = window.location.protocol;
+                const whepUrl = `${protocol}//${host}/${streamName}/whep`;
+                
+                log(`WHEP URL: ${whepUrl}`, 'info');
+
+                const response = await fetch(whepUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/sdp',
+                    },
+                    body: pc.localDescription.sdp,
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const answerSdp = await response.text();
+                log('Received answer from MediaMTX', 'success');
+
+                await pc.setRemoteDescription(new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: answerSdp,
+                }));
+
+                log('WebRTC negotiation complete', 'success');
+
+            } catch (err) {
+                log(`Error: ${err.message}`, 'error');
+                updateStatus('Error', 'disconnected');
+                stopStream();
+            }
+        }
+
+        function stopStream() {
+            log('Stopping stream...', 'info');
+
+            if (statsInterval) {
+                clearInterval(statsInterval);
+                statsInterval = null;
+            }
+
+            if (pc) {
+                pc.close();
+                pc = null;
+                log('Connection closed', 'info');
+            }
+
+            const video = document.getElementById('video');
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+
+            showVideoOverlay(true);
+            updateStatus('Disconnected', 'disconnected');
+
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            document.getElementById('iceState').textContent = '--';
+
+            // Reset stats
+            document.getElementById('videoCodec').textContent = '--';
+            document.getElementById('resolution').textContent = '--';
+            document.getElementById('fps').textContent = '--';
+            document.getElementById('bitrate').textContent = '--';
+            document.getElementById('latency').textContent = '-- ms';
+        }
+
+        async function startStatsMonitoring() {
+            if (statsInterval) clearInterval(statsInterval);
+
+            statsInterval = setInterval(async () => {
+                if (!pc) return;
+
+                try {
+                    const stats = await pc.getStats();
+                    stats.forEach(report => {
+                        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                            // Video codec
+                            if (report.codecId) {
+                                stats.forEach(codecReport => {
+                                    if (codecReport.id === report.codecId) {
+                                        document.getElementById('videoCodec').textContent = 
+                                            codecReport.mimeType?.split('/')[1] || '--';
+                                    }
+                                });
+                            }
+
+                            // FPS
+                            if (report.framesPerSecond) {
+                                document.getElementById('fps').textContent = 
+                                    Math.round(report.framesPerSecond);
+                            }
+
+                            // Bitrate
+                            if (report.bytesReceived && report.timestamp) {
+                                const bitrate = Math.round((report.bytesReceived * 8) / 1000);
+                                document.getElementById('bitrate').textContent = 
+                                    `${bitrate} kbps`;
+                            }
+
+                            // Resolution
+                            if (report.frameWidth && report.frameHeight) {
+                                document.getElementById('resolution').textContent = 
+                                    `${report.frameWidth}x${report.frameHeight}`;
+                            }
+
+                            // Latency/Jitter
+                            if (report.jitter) {
+                                document.getElementById('latency').textContent = 
+                                    `${Math.round(report.jitter * 1000)} ms`;
+                            }
+                        }
+                    });
+                } catch (err) {
+                    console.error('Stats error:', err);
+                }
+            }, 1000);
+        }
+
+        function toggleFullscreen() {
+            const container = document.getElementById('videoContainer');
+            if (!document.fullscreenElement) {
+                container.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Auto cleanup
+        window.addEventListener('beforeunload', stopStream);
+
+        // Initial log
+        log('WebRTC Player initialized', 'success');
+        log('Ready to connect...', 'info');
+
+        // Auto-set host on page load
+        window.onload = function() {
+            const host = getMediaMTXHost();
+            document.getElementById('host').value = host;
+            log(`Auto-detected host: ${host}`, 'info');
+        };
+    </script>
+</body>
+</html>

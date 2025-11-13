@@ -1,0 +1,39 @@
+api: yes
+apiAddress: :9997
+apiAllowOrigin: "*"
+
+rtspAddress: :8554
+rtmpAddress: :1935
+hlsAddress: :8888
+
+webrtcAddress: :8889
+webrtc: yes
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
+  - url: stun:stun1.l.google.com:19302
+
+# webrtcICEServers:
+#   - urls:
+#     - stun:stun.l.google.com:19302
+#     - stun:stun1.l.google.com:19302
+
+# IMPORTANT: Set Tailscale IP sebagai ICE host candidate
+webrtcAdditionalHosts: ["100.99.3.59"]  # Ganti dengan Tailscale IP komputer kamu
+
+# IMPORTANT: Allow all origins untuk ngrok
+webrtcAllowOrigin: "*"
+webrtcTrustedProxies: ["0.0.0.0/0"]
+
+# Logs untuk debugging
+logLevel: info
+logDestinations: [stdout]
+
+# Example path configuration for a camera
+paths:
+  mycamera:
+    source: rtsp://admin:Hiksds12@192.168.3.64:554/Streaming/Channels/101
+    # runOnReady: echo "Camera mycamera ready"
+    # runOnDemand: yes
+    # runOnDemandRestart: yes
+    # runOnInit: yes
+    # runOnInitRestart: yes
