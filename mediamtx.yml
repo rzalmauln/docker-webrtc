@@ -12,11 +12,6 @@ webrtcICEServers2:
   - url: stun:stun.l.google.com:19302
   - url: stun:stun1.l.google.com:19302
 
-# webrtcICEServers:
-#   - urls:
-#     - stun:stun.l.google.com:19302
-#     - stun:stun1.l.google.com:19302
-
 # IMPORTANT: Set Tailscale IP sebagai ICE host candidate
 webrtcAdditionalHosts: ["100.99.3.59"]  # Ganti dengan Tailscale IP komputer kamu
 
