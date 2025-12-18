@@ -1,71 +1,163 @@
 const http = require('http');
 const axios = require('axios');
 const { parseStringPromise } = require('xml2js');
+const FormData = require('form-data');
 
-const CAMERA_URL = "http://admin:Hiksds12@192.168.3.64/ISAPI/Event/notification/alertStream";
+/* ===============================
+   CONFIG
+=============================== */
+const CAMERA_URL =
+  "http://admin:Hiksds12@192.168.3.64/ISAPI/Event/notification/alertStream";
 
+/* ===============================
+   STATE
+=============================== */
+let xmlBuffer = "";
+let imageMode = false;
+let imageChunks = [];
+let pendingImageBuffer = null;
+let currentEventId = null;
 
-function startListener(){
-    http.get(CAMERA_URL, (res) => {
-        let buffer = "";
+/* ===============================
+   MAIN LISTENER
+=============================== */
+function startListener() {
+  console.log("🎥 Connecting to CCTV...");
 
-        res.on("data", async chunk => {
-            buffer += chunk.toString();
+  http.get(CAMERA_URL, (res) => {
 
-            const startTag = "<EventNotificationAlert";
-            const endTag = "</EventNotificationAlert>";
+    res.on("data", async (chunk) => {
 
-            // selama ada XML lengkap di buffer
-            while (buffer.includes(startTag) && buffer.includes(endTag)) {
-                const start = buffer.indexOf(startTag);
-                const end = buffer.indexOf(endTag) + endTag.length;
+      /* ===============================
+         IMAGE MODE (JPEG BINARY)
+      =============================== */
+      if (imageMode) {
+        imageChunks.push(chunk);
+        const buffer = Buffer.concat(imageChunks);
 
-                // Ambil hanya XML clean (buang boundary)
-                const xml = buffer.substring(start, end);
+        // JPEG END MARKER
+        const endIdx = buffer.indexOf(Buffer.from([0xFF, 0xD9]));
 
-                // Sisanya masih menunggu event berikutnya
-                buffer = buffer.slice(end);
+        if (endIdx !== -1) {
+          const imageBuffer = buffer.slice(0, endIdx + 2);
 
-                try {
-                    const json = await parseStringPromise(xml);
-                    const eventType = json.EventNotificationAlert.eventType?.[0] ?? "";
+          pendingImageBuffer = imageBuffer;
+          console.log("🕒 Image buffered, waiting for event validation");
 
-                    // Skip video loss
-                    if (eventType.toLowerCase() === "videoloss") {
-                        console.log("Video Loss detected → skipped");
-                        continue;  // lanjut ke XML berikutnya
-                    }
-                    // Skip duration
-                    if (eventType.toLowerCase() === "duration") {
-                        console.log("Duration detected → skipped");
-                        continue;  // lanjut ke XML berikutnya
-                    }
+          // sisa data setelah image
+          const remaining = buffer.slice(endIdx + 2);
+          xmlBuffer += remaining.toString('utf8');
 
-                    console.log("=== EVENT RECEIVED ===");
-                    console.log(eventType);
+          // reset image mode
+          imageMode = false;
+          imageChunks = [];
+        }
+        return;
+      }
 
-                    // Kirim ke Laravel API
-                    await axios.post("http://100.73.50.49:8000/api/cctv-event", {
-                        event: json,
-                        raw_xml: xml
-                    }, {
-                        timeout: 5000 // 3 detik
-                    }).catch(apiErr => {
-                        console.error("Laravel API Error:", apiErr.response?.data || apiErr.message);
-                    });
+      /* ===============================
+         NORMAL MODE (XML / STREAM)
+      =============================== */
 
+      // JPEG START MARKER
+      const jpegStart = chunk.indexOf(Buffer.from([0xFF, 0xD8]));
 
-                } catch (err) {
-                    console.error("Error parsing XML:", err.message);
-                }
-            }
-        });
+      if (jpegStart !== -1) {
+        console.log("🧠 JPEG START DETECTED");
 
-        res.on("end", () => {
-        console.log("Connection error:", err.message);
-        setTimeout(() => startListener(), 3000);
-        });
+        imageMode = true;
+        imageChunks = [chunk.slice(jpegStart)];
+
+        // XML sebelum image
+        xmlBuffer += chunk.slice(0, jpegStart).toString('utf8');
+        return;
+      }
+
+      // normal XML
+      xmlBuffer += chunk.toString('utf8');
+
+      /* ===============================
+         XML PARSING
+      =============================== */
+      const startTag = "<EventNotificationAlert";
+      const endTag = "</EventNotificationAlert>";
+
+      while (xmlBuffer.includes(startTag) && xmlBuffer.includes(endTag)) {
+        const start = xmlBuffer.indexOf(startTag);
+        const end = xmlBuffer.indexOf(endTag) + endTag.length;
+
+        const xml = xmlBuffer.substring(start, end);
+        xmlBuffer = xmlBuffer.slice(end);
+
+        try {
+          const json = await parseStringPromise(xml);
+          const alert = json.EventNotificationAlert;
+
+          const eventType =
+            alert.eventType?.[0]?.toLowerCase() ?? "";
+
+          currentEventId =
+            alert.targetID?.[0] ?? Date.now();
+
+          /* ===============================
+             SKIP INVALID EVENTS
+          =============================== */
+          if (eventType === "videoloss" || eventType === "duration") {
+            console.log("⛔ Event skipped:", eventType);
+            pendingImageBuffer = null;
+            continue;
+          }
+          const eventState =
+            alert.eventState?.[0]?.toLowerCase() ?? "";
+
+          if (eventState === "inactive") {
+            console.log("⛔ Event skipped:", eventState);
+            pendingImageBuffer = null;
+            continue;
+          }
+          console.log("=== EVENT RECEIVED ===");
+          console.log("📌 Event Type:", eventType);
+
+          /* ===============================
+             SEND EVENT + IMAGE TO LARAVEL
+          =============================== */
+          const form = new FormData();
+          form.append('event', JSON.stringify(json));
+          form.append('raw_xml', xml);
+
+          if (pendingImageBuffer) {
+            form.append('snapshot', pendingImageBuffer, {
+              filename: `event_${currentEventId}.jpg`,
+              contentType: 'image/jpeg'
+            });
+            pendingImageBuffer = null;
+          }
+
+            await axios.post(
+            "http://100.73.50.49:8000/api/cctv-event",
+            form,
+            { headers: form.getHeaders(), timeout: 5000 }
+            ).catch(err => {
+            console.error("⚠️ Failed to send event to backend:", err.message);
+            });
+        } catch (err) {
+          console.error("❌ XML parse error:", err.message);
+        }
+      }
     });
+
+    res.on("end", () => {
+      console.log("🔄 Connection closed, retrying...");
+      setTimeout(() => startListener(), 3000);
+    });
+
+  }).on("error", err => {
+    console.error("❌ Connection error:", err.message);
+    setTimeout(() => startListener(), 5000);
+  });
 }
 
+/* ===============================
+   START
+=============================== */
 startListener();
