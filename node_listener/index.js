@@ -122,6 +122,7 @@ function startListener() {
              SEND EVENT + IMAGE TO LARAVEL
           =============================== */
           const form = new FormData();
+	  form.append('camera_id', 1);
           form.append('event', JSON.stringify(json));
           form.append('raw_xml', xml);
 
